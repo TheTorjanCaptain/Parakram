@@ -16,4 +16,4 @@ Clone the repository and install dependencies:
 ```bash
 git clone https://github.com/your-username/parakram.git
 cd parakram
-pip install -r requirements.txt
+pip install -r requirements.txt(Not required as of now)
