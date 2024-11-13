@@ -24,21 +24,30 @@ def directory_buster(url, wordlist, method, timeout, user_agent, proxy, rate, re
     def test_directory(directory):
         target_url = f"{url}/{directory}"
         try:
-            response = requests.request(method, target_url, headers=headers, timeout=timeout, proxies=proxies, allow_redirects=follow_redirects)
+            # Adding verify=False to bypass SSL certificate verification
+            response = requests.request(
+                method, 
+                target_url, 
+                headers=headers, 
+                timeout=timeout, 
+                proxies=proxies, 
+                allow_redirects=follow_redirects, 
+                verify=False  # Disable SSL verification
+            )
             status_message = f"{target_url} - Status Code: {response.status_code}"
-            
+
             # Print all URLs and status codes if in verbose mode, or only matching status codes
             if args.verbose:
                 print("Testing", status_message)
             if response.status_code in status_filter or response.status_code == 200:
                 found_urls.append({"url": target_url, "status_code": response.status_code})
                 print("Found:", status_message)
-                
+
             # Recursive scanning for subdirectories if enabled and status code is 200
             if recursive and response.status_code == 200:
                 for subdirectory in wordlist:
                     test_directory(f"{directory}/{subdirectory}")
-            
+
             time.sleep(rate)
         except requests.RequestException as e:
             if args.verbose:
