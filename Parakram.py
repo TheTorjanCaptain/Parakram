@@ -1,10 +1,17 @@
 import requests
 import argparse
 import time
-import threading
 import json
 import csv
+import signal
+import urllib3
 from queue import Queue
+
+# Suppress InsecureRequestWarning
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Flag for handling interruption
+interrupt_flag = False
 
 # Function to load wordlist
 def load_wordlist(wordlist_file):
@@ -15,35 +22,46 @@ def load_wordlist(wordlist_file):
         print(f"Error: The file '{wordlist_file}' was not found.")
         return []
 
+# Signal handler for Ctrl+C
+def signal_handler(sig, frame):
+    global interrupt_flag
+    interrupt_flag = True
+    print("\nProcess interrupted. Do you want to quit?")
+    user_input = input("Press 'q' to quit, or any other key to resume: ").strip().lower()
+    if user_input == 'q':
+        print("Exiting...")
+        exit(0)
+    else:
+        print("Resuming...")
+        interrupt_flag = False
+
 # Directory busting function
 def directory_buster(url, wordlist, method, timeout, user_agent, proxy, rate, recursive, output, status_filter, follow_redirects, headers, output_format):
     found_urls = []
+    visited_urls = set()  # To avoid duplicate entries
     proxies = {"http": proxy, "https": proxy} if proxy else None
     headers = headers if headers else {"User-Agent": user_agent}
     
     def test_directory(directory):
+        global interrupt_flag
         target_url = f"{url}/{directory}"
+        if target_url in visited_urls:  # Skip duplicate URLs
+            return
+        visited_urls.add(target_url)  # Mark URL as visited
+
         try:
-            # Adding verify=False to bypass SSL certificate verification
-            response = requests.request(
-                method, 
-                target_url, 
-                headers=headers, 
-                timeout=timeout, 
-                proxies=proxies, 
-                allow_redirects=follow_redirects, 
-                verify=False  # Disable SSL verification
-            )
+            if interrupt_flag:  # Check if process was interrupted
+                return
+
+            response = requests.request(method, target_url, headers=headers, timeout=timeout, proxies=proxies, allow_redirects=follow_redirects, verify=False)
             status_message = f"{target_url} - Status Code: {response.status_code}"
 
-            # Print all URLs and status codes if in verbose mode, or only matching status codes
             if args.verbose:
                 print("Testing", status_message)
             if response.status_code in status_filter or response.status_code == 200:
                 found_urls.append({"url": target_url, "status_code": response.status_code})
                 print("Found:", status_message)
 
-            # Recursive scanning for subdirectories if enabled and status code is 200
             if recursive and response.status_code == 200:
                 for subdirectory in wordlist:
                     test_directory(f"{directory}/{subdirectory}")
@@ -56,6 +74,8 @@ def directory_buster(url, wordlist, method, timeout, user_agent, proxy, rate, re
     # Start busting directories
     for directory in wordlist:
         test_directory(directory)
+        if interrupt_flag:  # Check interruption after each directory
+            break
 
     # Output results to file if specified
     if output:
@@ -81,6 +101,7 @@ def directory_buster(url, wordlist, method, timeout, user_agent, proxy, rate, re
 
 # Argument parsing
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal_handler)  # Attach signal handler for Ctrl+C
     parser = argparse.ArgumentParser(description="Advanced Directory Buster")
     parser.add_argument("-w", "--wordlist", required=True, help="Path to the wordlist file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose mode to show all tested paths")
